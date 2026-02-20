@@ -1,4 +1,4 @@
-# quark-search
+# quark-download-skill
 
 [English](README.md)
 
@@ -13,17 +13,25 @@
 
 ## 安装
 
-### 通过 skills.sh（推荐）
+### 一键安装全部媒体技能（推荐）
+
+本技能是 [media-master](https://github.com/psylch/media-master) 的一部分，可一次安装音乐、网盘资源、书籍三个下载技能：
 
 ```bash
-npx skills add psylch/quark-search-skill -g -y
+npx skills add psylch/media-master -g -y
+```
+
+### 仅安装本技能
+
+```bash
+npx skills add psylch/quark-download-skill -g -y
 ```
 
 ### 通过 Claude Code Plugin Marketplace
 
 ```shell
-/plugin marketplace add psylch/quark-search-skill
-/plugin install quark-search@psylch-quark-search-skill
+/plugin marketplace add psylch/quark-download-skill
+/plugin install quark-download@psylch-quark-download-skill
 ```
 
 安装后需重启 Claude Code。

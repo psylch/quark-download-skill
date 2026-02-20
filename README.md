@@ -1,4 +1,4 @@
-# quark-search
+# quark-download-skill
 
 [中文文档](README.zh.md)
 
@@ -13,17 +13,25 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skill for search
 
 ## Installation
 
-### Via skills.sh (recommended)
+### Install all media skills at once (recommended)
+
+This skill is part of [media-master](https://github.com/psylch/media-master), which bundles music, cloud drive, and book download skills:
 
 ```bash
-npx skills add psylch/quark-search-skill -g -y
+npx skills add psylch/media-master -g -y
+```
+
+### Install this skill only
+
+```bash
+npx skills add psylch/quark-download-skill -g -y
 ```
 
 ### Via Claude Code Plugin Marketplace
 
 ```shell
-/plugin marketplace add psylch/quark-search-skill
-/plugin install quark-search@psylch-quark-search-skill
+/plugin marketplace add psylch/quark-download-skill
+/plugin install quark-download@psylch-quark-download-skill
 ```
 
 Restart Claude Code after installation.
