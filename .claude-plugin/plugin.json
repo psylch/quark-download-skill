@@ -1,12 +1,12 @@
 {
-  "name": "quark-search",
+  "name": "quark-download",
   "description": "Search, validate, and save cloud drive resources via PanSou aggregation API and local Quark desktop APP integration",
   "version": "1.0.0",
   "author": {
     "name": "psylch"
   },
-  "homepage": "https://github.com/psylch/quark-search-skill",
-  "repository": "https://github.com/psylch/quark-search-skill",
+  "homepage": "https://github.com/psylch/quark-download-skill",
+  "repository": "https://github.com/psylch/quark-download-skill",
   "license": "MIT",
   "keywords": ["quark", "cloud-drive", "pansou", "download", "网盘", "夸克", "资源搜索"]
 }
