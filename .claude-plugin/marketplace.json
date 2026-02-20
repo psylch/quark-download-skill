@@ -1,0 +1,20 @@
+{
+  "name": "psylch-quark-search-skill",
+  "owner": {
+    "name": "psylch"
+  },
+  "metadata": {
+    "description": "Cloud drive resource search and download via Quark desktop APP"
+  },
+  "plugins": [
+    {
+      "name": "quark-search",
+      "source": "./",
+      "description": "Search, validate, and save cloud drive resources via PanSou aggregation API and local Quark desktop APP integration",
+      "version": "1.0.0",
+      "category": "productivity",
+      "tags": ["quark", "cloud-drive", "pansou", "download", "网盘", "夸克"],
+      "homepage": "https://github.com/psylch/quark-search-skill"
+    }
+  ]
+}
