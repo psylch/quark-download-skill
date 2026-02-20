@@ -7,111 +7,117 @@ description: Search, validate, and save cloud drive resources via PanSou aggrega
 
 Automate the full workflow: search resources → validate links → save to Quark cloud drive → download locally, by combining the PanSou aggregation API with the local Quark desktop APP.
 
+All operations use the CLI script at `${SKILL_PATH}/scripts/quark_search.py`. It outputs JSON to stdout (`{"ok": true, "data": {...}}` or `{"ok": false, "error": "...", "code": "..."}`) and logs progress to stderr.
+
 ## Prerequisites Check
 
 Before any operation, verify the environment:
 
 ```bash
-# Check Quark APP status and login
-curl -s "http://localhost:9128/desktop_info" | python3 -m json.tool
+python3 ${SKILL_PATH}/scripts/quark_search.py check
 ```
 
-Expected: `isLogin: true`. If the APP is not running or not logged in, instruct the user to launch Quark and log in first.
+**Response:** `{"ok": true, "data": {"isLogin": true, ...}}` — confirms APP is running and logged in.
 
-## Workflow
+If the command fails with `"code": "app_not_running"`, instruct the user to launch Quark APP. If `isLogin` is `false`, instruct the user to log in first.
 
-### Step 1: Search Resources (PanSou API)
+## Workflow — Quick Search (recommended)
 
-**CRITICAL:** The search parameter is `kw` (NOT `q`). The `channels` and `plugins` parameters are required for results to be returned correctly.
+A single command searches PanSou, validates all links in parallel, and fetches file details for the top results:
 
 ```bash
-# First, fetch available channels and plugins from health endpoint
-curl -s "https://s.panhunt.com/api/health"
-# Returns: {"channels": ["channel1", ...], "plugins": ["plugin1", ...], ...}
-
-# Search with keyword — channels and plugins are comma-separated lists
-curl -s "https://s.panhunt.com/api/search?kw=KEYWORD&res=merge&src=all&channels=CHANNELS_CSV&plugins=PLUGINS_CSV&page=1&limit=30"
+python3 ${SKILL_PATH}/scripts/quark_search.py search "KEYWORD" --top 5
 ```
 
-**Parameters:**
+**Options:**
 
-| Param | Description | Example |
-|-------|-------------|---------|
-| `kw` | Search keyword (**required**) | `kw=三体` |
-| `res` | Result format (**required**) | `res=merge` |
-| `src` | Source scope (**required**) | `src=all` |
-| `channels` | Comma-separated Telegram channel list (**required**) | Fetch from `/api/health` |
-| `plugins` | Comma-separated website plugin list (**required**) | Fetch from `/api/health` |
-| `page` | Page number | `page=1` |
-| `limit` | Results per page | `limit=30` |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--top N` | `5` | Number of top valid results to return with details |
+| `--no-validate` | off | Skip validation (faster, but may include dead links) |
+| `--limit N` | `30` | PanSou results per page |
+| `--page N` | `1` | PanSou page number |
 
-**Response structure:**
+**Success response (`ok: true`):**
+
 ```json
 {
-  "code": 0,
+  "ok": true,
   "data": {
+    "keyword": "三体",
     "total": 1234,
-    "merged_by_type": {
-      "quark": [{"url": "https://pan.quark.cn/s/xxx", "note": "资源名", "password": "", "source": "plugin:libvio", "datetime": "..."}],
-      "baidu": [...],
-      "aliyun": [...],
-      "115": [...],
-      "pikpak": [...],
-      "uc": [...],
-      "magnet": [...],
-      "others": [...]
-    }
+    "valid_count": 8,
+    "results": [
+      {
+        "pwd_id": "abc123def",
+        "url": "https://pan.quark.cn/s/abc123def",
+        "note": "三体全集 4K",
+        "source": "plugin:libvio",
+        "datetime": "2025-01-15",
+        "stoken": "xxx",
+        "detail": {
+          "pwd_id": "abc123def",
+          "pdir_fid": "0",
+          "total": 3,
+          "list": [
+            {"file_name": "三体S01E01.mkv", "size": 4294967296, "dir": false, "fid": "f1"},
+            {"file_name": "Extras", "size": 0, "dir": true, "fid": "f2", "include_items": 5}
+          ]
+        }
+      }
+    ]
   }
 }
 ```
 
-When `total` is 0, the `data` object contains only `{"total": 0}` with no `merged_by_type` key.
+**Key fields:**
+- `total` — total results across all drive types from PanSou
+- `valid_count` — how many quark links passed validation
+- `results[].pwd_id` — share ID for save command
+- `results[].detail.list[]` — files/folders in the share
+- `results[].detail.list[].dir` — `true` if folder (more reliable than file_type)
+- `results[].detail.list[].fid` — use with `detail` command to browse subfolders
 
-**JSON parsing note:** PanSou API responses may contain invalid escape sequences. Always parse with `json.loads(raw, strict=False)` in Python.
+**No quark results:** When `results` is empty but `total` > 0, the response includes `type_counts` showing available results on other drive types. Report these to the user.
 
-**Priority:** Always prioritize `quark` type results since the user has Quark membership. Fall back to `aliyun`, `uc`, `baidu` etc. if no quark results.
+**Priority:** Always prioritize `quark` type results since the user has Quark membership. The script handles this automatically.
 
-### Step 2: Validate Links
+## Workflow — Step-by-step
 
-Before presenting results to the user, validate each candidate link. Extract `pwd_id` from the share URL (`https://pan.quark.cn/s/{pwd_id}`), then:
+For granular control, use individual subcommands:
 
-```bash
-# Get share token and check validity
-curl -s -X POST "https://drive-pc.quark.cn/1/clouddrive/share/sharepage/token?pr=ucpro&fr=pc" \
-  -H "content-type: application/json" \
-  -d '{"pwd_id":"PWD_ID_HERE","passcode":""}'
-```
-
-**Interpret response:**
-
-| `code` | Meaning | Action |
-|--------|---------|--------|
-| `0` | Valid share | Proceed. Extract `stoken` from response for detail query |
-| `41006` | Share does not exist (分享不存在) | Skip, mark as invalid |
-| `41004` | Share expired (分享已过期) | Skip, mark as expired |
-| Other non-zero | Other error | Skip |
-
-### Step 3: Get File Details
-
-For valid links, fetch the file list to show the user what's inside:
+### Validate Links
 
 ```bash
-curl -s "https://drive-pc.quark.cn/1/clouddrive/share/sharepage/detail?pr=ucpro&fr=pc&pwd_id=PWD_ID&stoken=STOKEN_URL_ENCODED&pdir_fid=0&force=0&_page=1&_size=50&_sort=file_type:asc,updated_at:desc" \
-  -H "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+python3 ${SKILL_PATH}/scripts/quark_search.py validate PWD_ID_OR_URL [...]
 ```
 
-**Important:** The `stoken` value must be URL-encoded (it contains `+`, `/`, `=` characters). Use `urllib.parse.urlencode()` in Python or `--data-urlencode` with curl.
+Accepts multiple pwd_ids or full share URLs. Returns validation status for each:
 
-Extract from response:
-- `data.list[].file_name` — file/folder name
-- `data.list[].size` — file size in bytes (0 for folders)
-- `data.list[].dir` — `true` if folder, `false` if file (more reliable than `file_type`)
-- `data.list[].fid` — file/folder ID (use as `pdir_fid` to browse into subfolders)
-- `data.list[].include_items` — number of items in folder
+| `status` | Meaning | Action |
+|----------|---------|--------|
+| `valid` | Share is alive | Proceed. Response includes `stoken` for detail query |
+| `expired` | Share expired (code 41004) | Skip, mark as expired |
+| `not_exist` | Share deleted (code 41006) | Skip, mark as invalid |
+| `error` | Other error | Skip |
 
-To browse into a subfolder, call the same endpoint with `pdir_fid` set to the folder's `fid`.
+### Get File Details
 
-### Step 4: Present Results to User
+```bash
+python3 ${SKILL_PATH}/scripts/quark_search.py detail PWD_ID --stoken STOKEN [--fid FID]
+```
+
+Fetches the file listing for a share. Use `--fid` to browse into a subfolder (pass the folder's `fid` from a previous detail response).
+
+### Health Check
+
+```bash
+python3 ${SKILL_PATH}/scripts/quark_search.py health [--refresh]
+```
+
+Shows PanSou API status and the `channels`/`plugins` lists used for search. Health data is cached for 24 hours at `~/.cache/quark-search/health.json`. Use `--refresh` to force a fresh fetch.
+
+## Present Results to User
 
 Format results clearly:
 
@@ -127,50 +133,36 @@ Format results clearly:
 
 Ask the user which one to save.
 
-### Step 5: Trigger Quark APP Save
+## Save
 
 When the user selects a resource, trigger the Quark APP to open the share link:
 
 ```bash
-# Method 1: via desktop_share_visiting (preferred, opens share view window)
-curl -s "http://localhost:9128/desktop_share_visiting?pwd_id=PWD_ID_HERE"
-
-# Method 2: via desktop_caller with deeplink (alternative)
-curl -s "http://localhost:9128/desktop_caller?deeplink=qkclouddrive%3A%2F%2Fsave%3Furl%3Dhttps%253A%252F%252Fpan.quark.cn%252Fs%252FPWD_ID_HERE"
-
-# Method 3: fallback — open share page in browser
-open "https://pan.quark.cn/s/PWD_ID_HERE"
+python3 ${SKILL_PATH}/scripts/quark_search.py save PWD_ID_OR_URL
 ```
 
-After triggering via Method 1 or 2, inform the user:
+The script tries three methods in order: `desktop_share_visiting` (preferred) → `desktop_caller` deeplink → browser fallback. The response indicates which method succeeded.
+
+After a successful APP save (method `desktop_share_visiting` or `desktop_caller`), inform the user:
 
 > 已在夸克 APP 中打开分享链接窗口。**注意：弹出的窗口可能很小，请留意任务栏/Dock 上的夸克图标。** 在 APP 中点击「保存到网盘」按钮完成保存。保存后文件会出现在你的网盘中，可以直接在 APP 中下载到本地。
 
-If the user reports no window appeared, fall back to Method 3 (opens browser share page where the user can click save).
+If the response method is `browser_fallback`, open the URL in the browser instead and inform the user to save from the web page.
 
-### Step 6: Batch Processing
+## Batch Processing
 
-When the user wants to search and save multiple resources, loop through steps 1-5 for each keyword. Validate all links first, then trigger APP saves sequentially with a brief delay between each.
+When the user wants to search and save multiple resources, loop through the search → present → save workflow for each keyword. Validate all links first via the `search` command, then trigger APP saves sequentially.
 
 ## Error Handling
 
 | Error | Detection | Resolution |
 |-------|-----------|------------|
-| Quark APP not running | `localhost:9128` connection refused | Tell user to launch Quark APP |
-| Not logged in | `desktop_info` returns `isLogin: false` | Tell user to log in |
-| No search results | PanSou returns `total: 0` | Suggest different keywords |
-| All links invalid | All validation checks fail | Try alternative drive types or different keywords |
-| Share has password | Token API returns password required error | Ask user for the extraction code (提取码) |
-
-## Health Check Endpoint
-
-To check PanSou API status and fetch the required `channels`/`plugins` lists for search:
-
-```bash
-curl -s "https://s.panhunt.com/api/health"
-```
-
-Returns: `channels` (array of Telegram channel names), `plugins` (array of website plugin names), `channels_count`, `plugin_count`, `status`. Join the arrays with commas to use as search parameters.
+| Quark APP not running | `check` returns `code: "app_not_running"` | Tell user to launch Quark APP |
+| Not logged in | `check` returns `isLogin: false` | Tell user to log in |
+| No search results | `search` returns `total: 0` | Suggest different keywords |
+| All links invalid | `search` returns `valid_count: 0` | Try alternative keywords or drive types |
+| Share has password | `validate` returns password required error | Ask user for the extraction code (提取码) |
+| PanSou API error | `search` returns `code: "pansou_error"` | Retry or try later |
 
 ## Important Notes
 

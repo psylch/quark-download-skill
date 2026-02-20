@@ -88,7 +88,9 @@ quark-search-skill/
 │   └── plugin.json               # Plugin manifest
 ├── skills/
 │   └── quark-search/
-│       └── SKILL.md              # Main skill definition
+│       ├── SKILL.md              # Main skill definition
+│       └── scripts/
+│           └── quark_search.py   # CLI script (search, validate, detail, save)
 ├── README.md
 ├── README.zh.md
 └── LICENSE

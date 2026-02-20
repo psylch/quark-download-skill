@@ -88,7 +88,9 @@ quark-search-skill/
 │   └── plugin.json               # 插件清单
 ├── skills/
 │   └── quark-search/
-│       └── SKILL.md              # 主 Skill 定义
+│       ├── SKILL.md              # 主 Skill 定义
+│       └── scripts/
+│           └── quark_search.py   # CLI 脚本（搜索、验证、详情、保存）
 ├── README.md
 ├── README.zh.md
 └── LICENSE
