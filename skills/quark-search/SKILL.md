@@ -22,10 +22,28 @@ Expected: `isLogin: true`. If the APP is not running or not logged in, instruct 
 
 ### Step 1: Search Resources (PanSou API)
 
+**CRITICAL:** The search parameter is `kw` (NOT `q`). The `channels` and `plugins` parameters are required for results to be returned correctly.
+
 ```bash
-# Search with keyword, returns results grouped by cloud drive type
-curl -s "https://s.panhunt.com/api/search?q=KEYWORD&page=1&limit=20"
+# First, fetch available channels and plugins from health endpoint
+curl -s "https://s.panhunt.com/api/health"
+# Returns: {"channels": ["channel1", ...], "plugins": ["plugin1", ...], ...}
+
+# Search with keyword — channels and plugins are comma-separated lists
+curl -s "https://s.panhunt.com/api/search?kw=KEYWORD&res=merge&src=all&channels=CHANNELS_CSV&plugins=PLUGINS_CSV&page=1&limit=30"
 ```
+
+**Parameters:**
+
+| Param | Description | Example |
+|-------|-------------|---------|
+| `kw` | Search keyword (**required**) | `kw=三体` |
+| `res` | Result format (**required**) | `res=merge` |
+| `src` | Source scope (**required**) | `src=all` |
+| `channels` | Comma-separated Telegram channel list (**required**) | Fetch from `/api/health` |
+| `plugins` | Comma-separated website plugin list (**required**) | Fetch from `/api/health` |
+| `page` | Page number | `page=1` |
+| `limit` | Results per page | `limit=30` |
 
 **Response structure:**
 ```json
@@ -34,26 +52,20 @@ curl -s "https://s.panhunt.com/api/search?q=KEYWORD&page=1&limit=20"
   "data": {
     "total": 1234,
     "merged_by_type": {
-      "quark": [{"url": "https://pan.quark.cn/s/xxx", "note": "资源名", "source": "plugin:libvio", "datetime": "..."}],
+      "quark": [{"url": "https://pan.quark.cn/s/xxx", "note": "资源名", "password": "", "source": "plugin:libvio", "datetime": "..."}],
       "baidu": [...],
       "aliyun": [...],
       "115": [...],
       "pikpak": [...],
-      "uc": [...]
+      "uc": [...],
+      "magnet": [...],
+      "others": [...]
     }
   }
 }
 ```
 
-**Parameters:**
-
-| Param | Description | Example |
-|-------|-------------|---------|
-| `q` | Search keyword (required) | `q=三体` |
-| `page` | Page number | `page=1` |
-| `limit` | Results per page | `limit=20` |
-| `type` | Filter by drive type | `type=quark` |
-| `source` | Filter by source | `source=plugin:libvio` |
+When `total` is 0, the `data` object contains only `{"total": 0}` with no `merged_by_type` key.
 
 **JSON parsing note:** PanSou API responses may contain invalid escape sequences. Always parse with `json.loads(raw, strict=False)` in Python.
 
@@ -88,12 +100,16 @@ curl -s "https://drive-pc.quark.cn/1/clouddrive/share/sharepage/detail?pr=ucpro&
   -H "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 ```
 
+**Important:** The `stoken` value must be URL-encoded (it contains `+`, `/`, `=` characters). Use `urllib.parse.urlencode()` in Python or `--data-urlencode` with curl.
+
 Extract from response:
 - `data.list[].file_name` — file/folder name
-- `data.list[].size` — file size (bytes, 0 for folders)
+- `data.list[].size` — file size in bytes (0 for folders)
+- `data.list[].dir` — `true` if folder, `false` if file (more reliable than `file_type`)
+- `data.list[].fid` — file/folder ID (use as `pdir_fid` to browse into subfolders)
 - `data.list[].include_items` — number of items in folder
-- `data.list[].file_type` — 0=folder, 1=file
-- `metadata._total` — total items in share
+
+To browse into a subfolder, call the same endpoint with `pdir_fid` set to the folder's `fid`.
 
 ### Step 4: Present Results to User
 
@@ -121,11 +137,16 @@ curl -s "http://localhost:9128/desktop_share_visiting?pwd_id=PWD_ID_HERE"
 
 # Method 2: via desktop_caller with deeplink (alternative)
 curl -s "http://localhost:9128/desktop_caller?deeplink=qkclouddrive%3A%2F%2Fsave%3Furl%3Dhttps%253A%252F%252Fpan.quark.cn%252Fs%252FPWD_ID_HERE"
+
+# Method 3: fallback — open share page in browser
+open "https://pan.quark.cn/s/PWD_ID_HERE"
 ```
 
-After triggering, inform the user:
+After triggering via Method 1 or 2, inform the user:
 
-> 已在夸克 APP 中打开分享链接窗口。请在 APP 中点击「保存到网盘」按钮完成保存。保存后文件会出现在你的网盘「来自：分享」文件夹中，可以直接在 APP 中下载到本地。
+> 已在夸克 APP 中打开分享链接窗口。**注意：弹出的窗口可能很小，请留意任务栏/Dock 上的夸克图标。** 在 APP 中点击「保存到网盘」按钮完成保存。保存后文件会出现在你的网盘中，可以直接在 APP 中下载到本地。
+
+If the user reports no window appeared, fall back to Method 3 (opens browser share page where the user can click save).
 
 ### Step 6: Batch Processing
 
@@ -143,13 +164,13 @@ When the user wants to search and save multiple resources, loop through steps 1-
 
 ## Health Check Endpoint
 
-To check PanSou API status and supported sources:
+To check PanSou API status and fetch the required `channels`/`plugins` lists for search:
 
 ```bash
 curl -s "https://s.panhunt.com/api/health"
 ```
 
-Returns: `channels_count` (Telegram channels), `plugin_count` (website plugins), `status`.
+Returns: `channels` (array of Telegram channel names), `plugins` (array of website plugin names), `channels_count`, `plugin_count`, `status`. Join the arrays with commas to use as search parameters.
 
 ## Important Notes
 

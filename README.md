@@ -6,7 +6,7 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skill for search
 
 | Step | What Happens | API Used |
 |------|-------------|----------|
-| **Search** | Query PanSou for cloud drive links across 6 drive types | `s.panhunt.com/api/search` |
+| **Search** | Query PanSou for cloud drive links across 6 drive types | `s.panhunt.com/api/search` (param: `kw`) |
 | **Validate** | Check each share link is still alive (not deleted/expired) | `drive-pc.quark.cn` public API |
 | **Details** | Fetch file names, sizes, folder contents | `drive-pc.quark.cn` public API |
 | **Save** | Open the share in Quark APP for one-click save to drive | `localhost:9128` local API |
@@ -52,7 +52,7 @@ quark search interstellar
 2. **Search** — queries PanSou API, prioritizes Quark drive results
 3. **Validate** — tests each share link via public token API (no auth needed)
 4. **Present** — shows valid results with file details, marks invalid/expired links
-5. **Save** — triggers Quark APP to open the selected share link window
+5. **Save** — triggers Quark APP to open the selected share link window (note: the popup may be small)
 
 > **Note:** The actual "save to drive" and "download to local" steps happen in the Quark APP UI — the user clicks one button. This is by design to avoid reverse-engineering authenticated APIs.
 
