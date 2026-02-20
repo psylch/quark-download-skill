@@ -1,9 +1,9 @@
 ---
-name: quark-drive
+name: quark-search
 description: Search, validate, and save cloud drive resources via PanSou aggregation API and local Quark desktop APP integration. This skill should be used when the user wants to find and download resources from cloud drives (网盘资源搜索下载), especially when they mention keywords like "搜资源", "找片", "下载", "网盘", "夸克", "quark", "panso", "盘搜". Requires Quark desktop APP running and logged in with membership.
 ---
 
-# Quark Drive — 网盘资源搜索与下载
+# Quark Search — 网盘资源搜索与下载
 
 Automate the full workflow: search resources → validate links → save to Quark cloud drive → download locally, by combining the PanSou aggregation API with the local Quark desktop APP.
 
