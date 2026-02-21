@@ -28,15 +28,18 @@ def log(msg):
     print(msg, file=sys.stderr)
 
 
-def ok(data):
-    json.dump({"ok": True, "data": data}, sys.stdout, ensure_ascii=False)
+def ok(data, hint=""):
+    out = {"ok": True, "data": data}
+    if hint:
+        out["hint"] = hint
+    json.dump(out, sys.stdout, ensure_ascii=False)
     print()
 
 
-def fail(error, code="error"):
-    json.dump({"ok": False, "error": error, "code": code}, sys.stdout, ensure_ascii=False)
-    print()
-    sys.exit(1)
+def fail(error, hint="", recoverable=True):
+    json.dump({"error": error, "hint": hint, "recoverable": recoverable}, sys.stderr, ensure_ascii=False)
+    print(file=sys.stderr)
+    sys.exit(1 if recoverable else 2)
 
 
 def http_get(url, timeout=15):
@@ -198,7 +201,8 @@ def cmd_search(args):
                          channels_csv=channels_csv, plugins_csv=plugins_csv)
 
     if resp.get("code", -1) != 0:
-        fail(f"PanSou error: {resp.get('message', 'unknown')}", "pansou_error")
+        fail(f"PanSou error: {resp.get('message', 'unknown')}",
+             hint="PanSou API returned an error. Try again later.", recoverable=True)
 
     total = resp.get("data", {}).get("total", 0)
     if total == 0:
@@ -293,7 +297,8 @@ def cmd_search(args):
 def cmd_save(args):
     pwd_id = extract_pwd_id(args.pwd_id)
     if not pwd_id:
-        fail(f"Invalid pwd_id or URL: {args.pwd_id}", "invalid_id")
+        fail(f"Invalid pwd_id or URL: {args.pwd_id}",
+             hint="Provide a valid Quark share URL or pwd_id.", recoverable=True)
 
     # Method 1: desktop_share_visiting
     try:
@@ -336,7 +341,8 @@ def cmd_validate(args):
             log(f"Skipping invalid input: {s}")
 
     if not pwd_ids:
-        fail("No valid pwd_ids provided", "no_input")
+        fail("No valid pwd_ids provided",
+             hint="Provide valid Quark share URLs or pwd_ids.", recoverable=True)
 
     log(f"Validating {len(pwd_ids)} link(s)...")
     results = validate_many(pwd_ids)
@@ -346,7 +352,8 @@ def cmd_validate(args):
 def cmd_detail(args):
     pwd_id = extract_pwd_id(args.pwd_id)
     if not pwd_id:
-        fail(f"Invalid pwd_id: {args.pwd_id}", "invalid_id")
+        fail(f"Invalid pwd_id: {args.pwd_id}",
+             hint="Provide a valid Quark share URL or pwd_id.", recoverable=True)
 
     stoken = args.stoken
     pdir_fid = args.fid or "0"
@@ -355,7 +362,8 @@ def cmd_detail(args):
     result = fetch_detail(pwd_id, stoken, pdir_fid=pdir_fid)
 
     if "error" in result:
-        fail(result["error"], code=str(result.get("code", "error")))
+        fail(result["error"],
+             hint="Share detail fetch failed. The link may be expired or invalid.", recoverable=True)
     ok(result)
 
 
@@ -365,9 +373,51 @@ def cmd_check(args):
         resp = json.loads(raw, strict=False)
         ok(resp)
     except urllib.error.URLError:
-        fail("Quark APP not running (localhost:9128 refused)", "app_not_running")
+        fail("Quark APP not running (localhost:9128 refused)",
+             hint="Start the Quark desktop app first.", recoverable=True)
     except Exception as e:
-        fail(str(e), "check_error")
+        fail(str(e),
+             hint="Unexpected error checking Quark APP status.", recoverable=True)
+
+
+def cmd_preflight(args):
+    """Check environment readiness: Python version, Quark APP status, PanSou health."""
+    result = {
+        "ready": True,
+        "dependencies": {
+            "python": {
+                "ok": True,
+                "version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+            },
+        },
+        "services": {},
+    }
+
+    # Check Quark APP
+    try:
+        raw = http_get(f"{QUARK_APP}/desktop_info", timeout=5)
+        resp = json.loads(raw, strict=False)
+        result["services"]["quark_app"] = {"ok": True, "info": resp}
+    except urllib.error.URLError:
+        result["services"]["quark_app"] = {"ok": False, "error": "Quark APP not running (localhost:9128 refused)"}
+        result["ready"] = False
+    except Exception as e:
+        result["services"]["quark_app"] = {"ok": False, "error": str(e)}
+        result["ready"] = False
+
+    # Check PanSou health
+    try:
+        health = get_health(refresh=True)
+        channels = health.get("channels", [])
+        plugins = health.get("plugins", [])
+        result["services"]["pansou"] = {"ok": True, "channels": len(channels), "plugins": len(plugins)}
+    except Exception as e:
+        result["services"]["pansou"] = {"ok": False, "error": str(e)}
+
+    if result["ready"]:
+        ok(result, hint="All checks passed. Environment is ready.")
+    else:
+        ok(result, hint="Some checks failed. Review services status above.")
 
 
 def cmd_health(args):
@@ -378,7 +428,8 @@ def cmd_health(args):
         out = {k: v for k, v in data.items() if not k.startswith("_")}
         ok(out)
     except Exception as e:
-        fail(str(e), "health_error")
+        fail(str(e),
+             hint="Failed to fetch PanSou health data.", recoverable=True)
 
 
 # ── Main ───────────────────────────────────────────────────────────────
@@ -412,6 +463,9 @@ def main():
     # check
     sub.add_parser("check", help="Check Quark APP status")
 
+    # preflight (alias for environment readiness check)
+    sub.add_parser("preflight", help="Check environment readiness (JSON output)")
+
     # health
     p_health = sub.add_parser("health", help="Show PanSou health/channels/plugins")
     p_health.add_argument("--refresh", action="store_true", help="Force refresh cache")
@@ -419,8 +473,8 @@ def main():
     args = parser.parse_args()
 
     if not args.command:
-        parser.print_help()
-        sys.exit(1)
+        parser.print_help(sys.stderr)
+        sys.exit(2)
 
     handlers = {
         "search": cmd_search,
@@ -428,6 +482,7 @@ def main():
         "detail": cmd_detail,
         "save": cmd_save,
         "check": cmd_check,
+        "preflight": cmd_preflight,
         "health": cmd_health,
     }
     handlers[args.command](args)
